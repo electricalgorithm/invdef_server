@@ -1,0 +1,108 @@
+# Imports ##################################
+import imutils
+from imutils.video.pivideostream import PiVideoStream
+# from imutils.video import FPS
+from time import asctime, localtime, time, sleep
+from termcolor import colored
+import socket
+import cv2
+import base64
+import config
+# ##########################################
+
+
+# General Functions ########################
+def throw(msg_type, message):
+    logfile = open(f"{config.LOGFILE_C}.log", "a")
+    if msg_type is "ERROR":
+        color = "red"
+    elif msg_type is "INFO" or msg_type is "MSG":
+        color = "grey"
+    elif msg_type is "START":
+        color = "green"
+    elif msg_type is "STOP":
+        color = "green"
+    elif msg_type is "CLIENT":
+        color = "cyan"
+    else:
+        print("Something wrong with \"throw\" function.\nCheck the code.")
+        color = "magenta"
+
+    _time = asctime(localtime(time()))
+    print(colored(f"[{msg_type}] {message}", color))
+    logfile.write(f"[{msg_type}][{_time}] {message}\n")
+
+    logfile.close()
+# ##########################################
+
+
+# Execute when the program starts.
+throw("START", "Raspberry Pi Camera Server has started.")
+
+# Networking
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+portBind = config.PORT + 100
+
+while True:
+    try:
+        sock.bind(
+            (config.SERVER_ADDR, portBind)
+        )
+        break
+    except OSError as error:
+        throw("ERROR", error)
+        if error.errno == 98:
+            throw("INFO", f"Port is using by another one. Trying new port: {portBind + 1}.")
+            portBind += 1
+
+sock.listen(1)
+throw("START", f"Server is listening on {socket.gethostbyname(socket.gethostname())}:{portBind}")
+
+# ÖNEMLİ NOT!
+# Burayı while True yaptım ki bağlantıdan düşersek yeniden bağlanabilelim.
+# Ama bunu yapabilmek için kullanıcıyı düşürmen lazım conn.close ile bağlantı
+# hatası aldığında. İlgili ayarları yapıp test et kanka.
+while True:
+    conn, deta = sock.accept()
+    throw("INFO", f"New connection established: {deta[0]}:{deta[1]}")
+
+    vs = PiVideoStream().start()
+    sleep(0.1)
+
+    frame = vs.read()
+    frame = imutils.resize(frame, width=240)
+    encoded, buffer = cv2.imencode('.jpg', frame)
+    b_frame = base64.b64encode(buffer)
+    b_size = len(b_frame)
+
+    # fps = FPS().start()
+
+    while True:
+        frame = vs.read()
+        frame = imutils.resize(frame, width=240)
+        encoded, buffer = cv2.imencode('.jpg', frame)
+        b_frame = base64.b64encode(buffer)
+        part1 = 0
+        part2 = 65536
+        while part1 < b_size + 1:
+            try:
+                conn.sendall(b_frame[part1:part2])
+            except Exception as error:
+                throw("[ERROR]", error)
+                break
+            part1 += 65536
+            part2 += 65536
+        try:
+            conn.sendall(b'next')
+        except Exception as error:
+            throw("[ERROR]", error)
+            break
+        # fps.update()
+
+    conn.close()
+    # fps.stop()
+
+    # ÖNEMLİ NOT!
+    # Bu fonksiyonlara artık ihtiyacın yoksa sil kanka.
+    # print("Elapsed time:\t", fps.elapsed())
+    # print("FPS:\t", fps.fps())
