@@ -7,7 +7,7 @@ USER = {
 # If this port's are full, program will check the next ones and then start the server on them.
 PORT = 38880
 SERVER_ADDR = "0.0.0.0"
-RESOLUTION = (192, 128)
+RESOLUTION = (1024, 720)
 FRAMERATE = 24
 FORMAT = "utf-8"
 LOGGING = True
