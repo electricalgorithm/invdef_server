@@ -45,8 +45,8 @@ def _main__arm():
             # Structuring the serialized frame's length.
             frame_struct = \
                 struct.pack("IIQ",
-                            camera.resolution(0),
-                            camera.resolution(1),
+                            camera.resolution[0],
+                            camera.resolution[1],
                             len(frame_bytes)
                             ) + frame_bytes
 
