@@ -2,9 +2,7 @@ import socket
 import cv2
 import numpy as np
 import struct
-import pickle
-import picamera
-from termcolor import colored
+# import picamera
 from time import asctime, time, localtime, sleep
 import config
 from utils import throw
@@ -34,42 +32,47 @@ if __name__ == "__main__":
         conn, addr = connection.accept()
         throw("CLIENT", f"Connection established from {addr}")
 
-        camera = picamera.PiCamera()
-        camera.resolution = config.RESOLUTION
-        camera.framerate = config.FRAMERATE
-        sleep(2)
-        image = np.empty((camera.resolution[0], camera.resolution[1], 3), dtype=np.uint8)
+        # camera = picamera.PiCamera()
+        # camera.resolution = config.RESOLUTION
+        # camera.framerate = config.FRAMERATE
+        # sleep(2)
+        # image = np.empty((camera.resolution[0], camera.resolution[1], 3), dtype=np.uint8)
         while conn:
-            camera.capture(image, 'rgb')
+            # camera.capture(image, 'rgb')
 
-            # videoCapture = cv2.VideoCapture(0)
+            video_capture = cv2.VideoCapture(0)
             # For better FPS, low quality is optional.
-            # videoCapture.set(cv2.CAP_PROP_FRAME_WIDTH, config.RESOLUTION[1])
-            # videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.RESOLUTION[0])
+            video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.RESOLUTION[1])
+            video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.RESOLUTION[0])
+            throw("INFO", f"Resolution set to ({int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))}, "
+                          f"{int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))}) by OpenCV")
 
-            # while videoCapture.isOpened():
-            #     res, frame = videoCapture.read()
-            #     if not res:
-            #         continue
+            while video_capture.isOpened():
+                res, frame = video_capture.read()
+                if not res:
+                    continue
 
-            # Converting BGR to RGB scheme
-            # frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # Changing numpy.ndarray to bytes
-            frame_bytes = image.tobytes(order=None)
-            # Packing the serialized frame's length.
-            # "Q" represents "unsigned long long".
-            # "s" represents "char[]"
-            frame_struct = \
-                struct.pack("IIQ", config.RESOLUTION[0], config.RESOLUTION[1], len(frame_bytes)) + frame_bytes
+                # Converting BGR to RGB scheme
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Changing numpy.ndarray to bytes
+                frame_bytes = frame_rgb.tobytes(order=None)
+                # Packing the serialized frame's length.
+                # "Q" represents "unsigned long long".
+                # "s" represents "char[]"
+                frame_struct = \
+                    struct.pack("IIQ",
+                                int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                                int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+                                len(frame_bytes)
+                                ) + frame_bytes
 
-            # Sending frame to the client
-            try:
-                conn.sendall(frame_struct)
-            except OSError as error:
-                if error.errno == 32:
-                    conn.close()
-                    throw("ERROR", "[NO:32] Client went down. Restart the client.")
-                    # videoCapture.relase()
-                    break
-                continue
-
+                # Sending frame to the client
+                try:
+                    conn.sendall(frame_struct)
+                except OSError as error:
+                    if error.errno == 32:
+                        conn.close()
+                        throw("ERROR", "[NO:32] Client went down. Restart the client.")
+                        video_capture.release()
+                        break
+                    continue
