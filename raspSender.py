@@ -1,24 +1,26 @@
-# Imports and process_list ##################
+# Imports ##################################
 import config
 from utils import *
-from gpio_function import gpio_function
+from gpio_function import gpio_function, gpio_reads
 import socket
 import threading
+from time import sleep
 from random import randint
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Hash import SHA256
 from Crypto.Random import get_random_bytes
-process_list = []
 # ##########################################
 
+process_list = []
 AES_LENGTH = 256
+DELAY_MIN = 0.1  # Delay between sending battery etc.
+global IS_CLIENT_CONNECTED  # For communication between threads
 
 
 # Networking Functions #####################
 def receiver(conne, details):
-    global process_list
-
+    global process_list, IS_CLIENT_CONNECTED
     while True:
         # Data receiving
         try:
@@ -33,7 +35,7 @@ def receiver(conne, details):
                     throw("ERROR", err)
                     continue
                 except IndexError:
-                    throw("ERROR", "Data couldn't recieved correctly.")
+                    throw("ERROR", "Data couldn't received correctly.")
         except Exception as err:
             throw("ERROR", err, f"{details[0]}")
             break
@@ -53,6 +55,7 @@ def receiver(conne, details):
             gpio_function("light_status", "False")
             gpio_function("car_status", "False")
             conne.close()
+            IS_CLIENT_CONNECTED = False
             throw("CLIENT", f"All the systems are closed!")
             break
 
@@ -137,6 +140,31 @@ def decrypt(nonce, mac_tag, encrypted_message):
         return False
     decrypted_message = decrypted_message_as_bytes.decode(config.FORMAT)
     return decrypted_message
+
+
+def info_repeatedly(p_conn):
+    global IS_CLIENT_CONNECTED
+    info_types = ["battery_percentage",
+                  "outside_temperature",
+                  "inside_temperature",
+                  "peltier_right",
+                  "peltier_left",
+                  "peltier_front",
+                  "peltier_back",
+                  "peltier_top"
+                  ]
+
+    while True:
+        if not IS_CLIENT_CONNECTED:
+            break
+
+        sleep(60 * DELAY_MIN)
+        for _type in info_types:
+            val = gpio_reads(_type)
+            print(f"{_type}::{val}")
+            send(p_conn, f"{_type}", f"{val}")
+            sleep(0.5)
+
 # ##########################################
 
 
@@ -157,6 +185,7 @@ def get_command(param):
 
 
 if __name__ == "__main__":
+    global IS_CLIENT_CONNECTED
     _PORT = config.PORT
     connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -190,7 +219,7 @@ if __name__ == "__main__":
         conn.send(rasp_public)
         # Receiving username and password as encrypted with RSA.
         login_details = [conn.recv(256), conn.recv(256)]
-        # Creating a decryptor object for RSA-PKCS1-OAEP
+        # Creating a decrypter object for RSA-PKCS1-OAEP
         decryptor_for_login = PKCS1_OAEP.new(RSA.import_key(rasp_keys.export_key()))
         # Decrypting the login details. 0: Username, 1: Password (hashed)
         login_details = [decryptor_for_login.decrypt(login_details[0]), decryptor_for_login.decrypt(login_details[1])]
@@ -220,6 +249,8 @@ if __name__ == "__main__":
             conn.close()
             continue
 
+        IS_CLIENT_CONNECTED = True
+
         # Opening a thread for receiver function
         receiver_t = threading.Thread(target=receiver, args=(conn, data), daemon=True)
         receiver_t.start()
@@ -227,3 +258,6 @@ if __name__ == "__main__":
         # Opening a thread for get_command function
         cmd_r = threading.Thread(target=get_command, args=(conn,), daemon=True)
         cmd_r.start()
+
+        # Opening a thread for sending gpio_inputs
+        threading.Thread(target=info_repeatedly, args=(conn,), daemon=True).start()
